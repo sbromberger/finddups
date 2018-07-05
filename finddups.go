@@ -7,13 +7,15 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // md5sum returns the md5sum of a file.
 func md5sum(file string) ([16]byte, error) {
 	contents, err := ioutil.ReadFile(file)
 	if err != nil {
-		fmt.Println("error calculating md5sum for ", file)
+		log.Warn("error calculating md5sum for ", file)
 		return [16]byte{}, err
 	}
 	return md5.Sum(contents), nil
@@ -21,21 +23,18 @@ func md5sum(file string) ([16]byte, error) {
 
 // processFile takes a path and updates sizePath, which is a map of
 // file size to the path.
-func processFile(path string, info os.FileInfo, err error, sizePath map[int64][]string, totalFiles *int) error {
-	if err != nil {
-		fmt.Println("error traversing ", path)
-		return err
-	}
-	st, err := os.Stat(path)
-	if err != nil {
-		fmt.Println("error: cannot stat ", path)
-		return err
-	}
+func processFile(path string, info os.FileInfo, sizePath map[int64][]string, totalFiles *int) error {
+	// st, err := os.Stat(path)
+	// if err != nil {
+	// 	log.Warn("skipping invalid file ", path)
+	// 	return err
+	// }
 	// don't try to get the size of directories
-	if st.IsDir() {
+	if !info.Mode().IsRegular() {
 		return nil
 	}
-	size := st.Size()
+
+	size := info.Size()
 	sizePath[size] = append(sizePath[size], path)
 	*totalFiles++
 	return nil
@@ -74,22 +73,30 @@ func processSizePath(sizePath map[int64][]string) ([][]string, int) {
 }
 
 func main() {
+	formatter := &log.TextFormatter{
+		FullTimestamp: true,
+	}
+	log.SetFormatter(formatter)
+
+	log.Info("Starting")
 	start := time.Now()
 	sizePath := make(map[int64][]string)
 	totalFiles := 0
 
-	fmt.Println("Starting")
 	root := os.Args[1]
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		return processFile(path, info, err, sizePath, &totalFiles)
+		return processFile(path, info, sizePath, &totalFiles)
 	})
 	if err != nil {
-		fmt.Println("walkpath error")
+		log.Debug("walkpath error")
 	}
-	dups, totalmd5s := processSizePath(sizePath)
+	// dups, totalmd5s := processSizePath(sizePath)
+	_, totalmd5s := processSizePath(sizePath)
 	for _, dup := range dups {
 		fmt.Println("duplicate files: ", dup)
 	}
 	elapsed := time.Since(start)
-	fmt.Printf("total files processed: %d. Total md5s: %d. Took %s.\n", totalFiles, totalmd5s, elapsed)
+	log.Infof("Total files processed: %d.", totalFiles)
+	log.Infof("Total md5s: %d.", totalmd5s)
+	log.Infof("Took %s.\n", elapsed.Round(1*time.Millisecond))
 }
