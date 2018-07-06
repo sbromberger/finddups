@@ -1,8 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"crypto/md5"
-	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -19,6 +20,20 @@ func md5sum(file string) ([16]byte, error) {
 		return [16]byte{}, err
 	}
 	return md5.Sum(contents), nil
+}
+
+func md5sum2(file string) ([16]byte, error) {
+	h := md5.New()
+	f, err := os.Open(file)
+	if err != nil {
+		log.Fatal(err)
+	}
+	r := bufio.NewReaderSize(f, 2*1024*1024)
+
+	io.Copy(h, r)
+	var y [16]byte
+	copy(y[:], h.Sum(nil))
+	return y, nil
 }
 
 // processFile takes a path and updates sizePath, which is a map of
@@ -43,7 +58,7 @@ func processFile(path string, info os.FileInfo, sizePath map[int64][]string, tot
 // processSizePath takes the sizePath map and
 // returns a list of lists, where the inner list is
 // a list of duplicate files.
-func processSizePath(sizePath map[int64][]string) ([][]string, int) {
+func processSizePath(sizePath map[int64][]string, md5fn func(string) ([16]byte, error)) ([][]string, int) {
 	totalmd5s := 0
 	dups := make([][]string, 0, 10)
 	for _, paths := range sizePath {
@@ -52,7 +67,8 @@ func processSizePath(sizePath map[int64][]string) ([][]string, int) {
 		}
 		pathmd5 := map[[16]byte][]string{}
 		for _, p := range paths {
-			md5p, err := md5sum(p)
+			md5p, err := md5fn(p)
+
 			totalmd5s++
 			if err == nil {
 				pathmd5[md5p] = append(pathmd5[md5p], p)
@@ -91,10 +107,10 @@ func main() {
 		log.Debug("walkpath error")
 	}
 	// dups, totalmd5s := processSizePath(sizePath)
-	_, totalmd5s := processSizePath(sizePath)
-	for _, dup := range dups {
-		fmt.Println("duplicate files: ", dup)
-	}
+	_, totalmd5s := processSizePath(sizePath, md5sum2)
+	// for _, dup := range dups {
+	// 	fmt.Println("duplicate files: ", dup)
+	// }
 	elapsed := time.Since(start)
 	log.Infof("Total files processed: %d.", totalFiles)
 	log.Infof("Total md5s: %d.", totalmd5s)
