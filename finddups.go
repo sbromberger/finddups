@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"crypto/md5"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -11,6 +12,11 @@ import (
 
 	log "github.com/sirupsen/logrus"
 )
+
+type md5Filename struct {
+	md5      [16]byte
+	filename string
+}
 
 // md5sum returns the md5sum of a file.
 func md5sum(file string) ([16]byte, error) {
@@ -55,29 +61,57 @@ func processFile(path string, info os.FileInfo, sizePath map[int64][]string, tot
 	return nil
 }
 
+func spawnWorker(filechan <-chan string, md5chan chan<- *md5Filename, md5fn func(string) ([16]byte, error)) {
+	for filename := range filechan {
+		filemd5, err := md5fn(filename)
+		if err == nil {
+			md5chan <- &md5Filename{filemd5, filename}
+		} else {
+			md5chan <- nil
+		}
+	}
+}
+
 // processSizePath takes the sizePath map and
 // returns a list of lists, where the inner list is
 // a list of duplicate files.
 func processSizePath(sizePath map[int64][]string, md5fn func(string) ([16]byte, error)) ([][]string, int) {
-	totalmd5s := 0
+
+	md5chan := make(chan *md5Filename, 100) // can be nil
+	filechan := make(chan string, 100)
+	nWorkers := 10
+
+	for i := 0; i < nWorkers; i++ {
+		go spawnWorker(filechan, md5chan, md5sum2)
+	}
 	dups := make([][]string, 0, 10)
+	pathmd5 := map[[16]byte][]string{}
+	totalmd5s := 0
 	for _, paths := range sizePath {
 		if len(paths) < 2 {
 			continue
 		}
-		pathmd5 := map[[16]byte][]string{}
-		for _, p := range paths {
-			md5p, err := md5fn(p)
 
+		// at this point we have 2 or more files with the same size.
+		// put 'em in the channel.
+
+		for _, p := range paths {
+			filechan <- p
 			totalmd5s++
-			if err == nil {
-				pathmd5[md5p] = append(pathmd5[md5p], p)
-			}
-		}
-		for _, dupPaths := range pathmd5 {
-			dups = append(dups, dupPaths)
 		}
 	}
+
+	for i := 0; i < totalmd5s; i++ {
+		md5ForFile := <-md5chan
+		if md5ForFile != nil {
+			pathmd5[md5ForFile.md5] = append(pathmd5[md5ForFile.md5], md5ForFile.filename)
+		}
+	}
+
+	for _, dupPaths := range pathmd5 {
+		dups = append(dups, dupPaths)
+	}
+
 	// cull all lists with only one file. There are no duplicates.
 	prunedDups := make([][]string, 0, 10)
 	for _, dup := range dups {
@@ -107,10 +141,10 @@ func main() {
 		log.Debug("walkpath error")
 	}
 	// dups, totalmd5s := processSizePath(sizePath)
-	_, totalmd5s := processSizePath(sizePath, md5sum2)
-	// for _, dup := range dups {
-	// 	fmt.Println("duplicate files: ", dup)
-	// }
+	dups, totalmd5s := processSizePath(sizePath, md5sum2)
+	for _, dup := range dups {
+		fmt.Println("duplicate files: ", dup)
+	}
 	elapsed := time.Since(start)
 	log.Infof("Total files processed: %d.", totalFiles)
 	log.Infof("Total md5s: %d.", totalmd5s)
