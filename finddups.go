@@ -72,13 +72,22 @@ func spawnWorker(filechan <-chan string, md5chan chan<- *md5Filename, md5fn func
 	}
 }
 
+func enqueuePaths(filechan chan string, path string) {
+	filechan <- path
+}
+
 // processSizePath takes the sizePath map and
 // returns a list of lists, where the inner list is
 // a list of duplicate files.
 func processSizePath(sizePath map[int64][]string, md5fn func(string) ([16]byte, error)) ([][]string, int) {
 
+	totalmd5s := 0
+	for _, paths := range sizePath {
+		totalmd5s += len(paths)
+	}
+
 	md5chan := make(chan *md5Filename, 100) // can be nil
-	filechan := make(chan string, 100)
+	filechan := make(chan string, totalmd5s)
 	nWorkers := 10
 
 	for i := 0; i < nWorkers; i++ {
@@ -86,7 +95,7 @@ func processSizePath(sizePath map[int64][]string, md5fn func(string) ([16]byte, 
 	}
 	dups := make([][]string, 0, 10)
 	pathmd5 := map[[16]byte][]string{}
-	totalmd5s := 0
+
 	for _, paths := range sizePath {
 		if len(paths) < 2 {
 			continue
@@ -96,17 +105,18 @@ func processSizePath(sizePath map[int64][]string, md5fn func(string) ([16]byte, 
 		// put 'em in the channel.
 
 		for _, p := range paths {
-			filechan <- p
-			totalmd5s++
+			go enqueuePaths(filechan, p)
 		}
-	}
 
+	}
+	fmt.Println("md5 total = ", totalmd5s)
 	for i := 0; i < totalmd5s; i++ {
 		md5ForFile := <-md5chan
 		if md5ForFile != nil {
 			pathmd5[md5ForFile.md5] = append(pathmd5[md5ForFile.md5], md5ForFile.filename)
 		}
 	}
+	fmt.Println("after dequeue")
 
 	for _, dupPaths := range pathmd5 {
 		dups = append(dups, dupPaths)
