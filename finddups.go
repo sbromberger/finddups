@@ -97,7 +97,7 @@ func main() {
 	}
 
 	nCPU := runtime.NumCPU()
-	nWorkers := flag.Int("n", nCPU, fmt.Sprintf("number of workers (default %d)", nCPU))
+	nWorkers := flag.Int("n", nCPU, "number of workers")
 	minSizeStr := flag.String("min", "0", "minimum size of files to consider (default 0)")
 	flag.Parse()
 	minSize, err := humanize.ParseBytes(*minSizeStr)
