@@ -146,7 +146,5 @@ func main() {
 		}
 	}
 	elapsed := time.Since(start)
-	// log.Infof("Total files processed: %d.", totalFiles)
-	// log.Infof("Total md5s: %d.", totalmd5s)
 	log.Infof("Took %s.\n", elapsed.Round(1*time.Millisecond))
 }
