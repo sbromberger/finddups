@@ -59,16 +59,13 @@ func launchWorker(in <-chan string, out chan<- hashFilename, wg *sync.WaitGroup)
 // traverseDirectory walks a directory tree from a root and
 // checks file sizes. If two or more files have the same size,
 // the file names are pushed onto a channel for md5 hashing.
+// The walk function ignores errors while traversing the files.
 func traverseDirectory(root string, fileChan chan<- string, cfg config) {
 
 	defer close(fileChan)
 	sizePath := make(map[int64][]string)
 
 	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
 		if info.Mode().IsRegular() {
 			s := info.Size()
 			if s > cfg.minFileSize {
