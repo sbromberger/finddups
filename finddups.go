@@ -31,8 +31,9 @@ func md5sum(file string) ([16]byte, error) {
 	h := md5.New()
 	f, err := os.Open(file)
 	if err != nil {
-		log.Fatal(err)
+		return [16]byte{}, err
 	}
+	defer f.Close()
 	r := bufio.NewReaderSize(f, 2*1024*1024)
 
 	io.Copy(h, r)
