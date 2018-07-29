@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sync"
+	"syscall"
 	"time"
 
 	humanize "github.com/dustin/go-humanize"
@@ -132,10 +134,24 @@ func main() {
 	// and then add them to a map. The files that have the
 	// same md5s are presumed to be identical.
 	hashPath := make(map[[16]byte][]string)
-	for hashedfile := range hashChan {
-		hashPath[hashedfile.hash] = append(hashPath[hashedfile.hash], hashedfile.filename)
-	}
+	sigusr1 := make(chan os.Signal, 20)
+	signal.Notify(sigusr1, syscall.SIGUSR1)
 
+	defer close(sigusr1)
+
+FORLOOP:
+	for {
+		select {
+		case <-sigusr1:
+			log.Infof("size of hashPath: %d", len(hashPath))
+
+		case hashedfile, ok := <-hashChan:
+			if !ok {
+				break FORLOOP
+			}
+			hashPath[hashedfile.hash] = append(hashPath[hashedfile.hash], hashedfile.filename)
+		}
+	}
 	// go through the map, and for every md5 hash that has
 	// more than one file associated with it, print the files.
 	for _, dup := range hashPath {
